@@ -48,14 +48,12 @@ wsServer.on('request', function(request) {
         if (!sessions[id]) {
             sessions[id] = {
                 deviceConnection: connection,
-                clientsConnections: []
+                clientConnection: null
             }
         }
 
         connection.on('message', function(message) {
-            for (var i = sessions[id].clientsConnections.length - 1; i >= 0; i--) {
-                sessions[id].clientsConnections[i].sendUTF(message.utf8Data)
-            }
+            sessions[id].clientConnection.sendUTF(message.utf8Data)
         });
 
         connection.on('close', function(reasonCode, description) {
@@ -73,12 +71,20 @@ wsServer.on('request', function(request) {
 
         console.log((new Date()) + ' Client Connection accepted.');
 
+        sessions[id].clientConnection = connection;
+
         connection.on('message', function(message) {
-            sessions[id].deviceConnection.sendUTF(message.utf8Data)
+            if (sessions[id]) {
+                sessions[id].deviceConnection.sendUTF(message.utf8Data)
+            } else {
+                connection.close();
+            }             
         });
 
         connection.on('close', function(reasonCode, description) {
-            sessions[id].clientsConnections.remove(connection);
+            if (sessions[id]) {
+                sessions[id].clientConnection = null;
+            }
             console.log((new Date()) + ' Peer ' + connection.remoteAddress + ' disconnected.');
         });
     }
