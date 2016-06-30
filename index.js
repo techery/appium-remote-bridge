@@ -1,6 +1,7 @@
 var WebSocketServer = require('websocket').server;
 var http = require('http');
 var URL = require('url');
+var pendingRequestsCache = require('memory-cache');
 
 var server = http.createServer(function (request, response) {
     console.log((new Date()) + ' Received request for ' + request.url);
@@ -28,8 +29,6 @@ function originIsAllowed(origin) {
 }
 
 var sessions = {};
-
-var pendingRequests = {};
 
 function initSession(id) {
     sessions[id] = {
@@ -59,18 +58,19 @@ wsServer.on('request', function (request) {
         }
 
         sessions[id].deviceConnection = connection;
-        if (pendingRequests[id]) {
-            pendingRequests[id].forEach(function (message) {
+        var requests = pendingRequestsCache.get(id);
+        if (requests) {
+            requests.forEach(function (message) {
                 console.log('Send pending message ' + message.utf8Data);
                 if (sessions[id].deviceConnection) {
                     sessions[id].deviceConnection.sendUTF(message.utf8Data)
                 }
             });
-            pendingRequests[id] = null;
+            pendingRequestsCache.del(id);
         }
 
         connection.on('message', function (message) {
-            console.log('Received response ' + message.utf8Data);
+            console.log((new Date()) + ' Received response ' + message.utf8Data);
             if (sessions[id].clientConnection) {
                 sessions[id].clientConnection.sendUTF(message.utf8Data)
             }
@@ -94,11 +94,16 @@ wsServer.on('request', function (request) {
         sessions[id].clientConnection = connection;
 
         connection.on('message', function (message) {
-            console.log("Received request " + message);
+            console.log((new Date()) + ' Received request ' + message.utf8Data);
             if (sessions[id].deviceConnection) {
                 sessions[id].deviceConnection.sendUTF(message.utf8Data)
             } else {
-                pendingRequests[id] = [message];
+                var requests = pendingRequestsCache.get(id);
+                if (!requests) {
+                    requests = [];
+                }
+                requests.push(message);
+                pendingRequestsCache.put(id, requests, 5 * 60 * 1000);
             }
         });
 
